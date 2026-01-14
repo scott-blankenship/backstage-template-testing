@@ -1,0 +1,10 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: Nucor.Backstage.Templates
+  annotations:
+    github.com/project-slug: NucorApplications/Nucor.Backstage.Templates
+spec:
+  type: other
+  lifecycle: unknown
+  owner: nue_nsight_development_azure_admins
