@@ -1,15 +1,4 @@
 apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: Nucor.Backstage.Templates
-  annotations:
-    github.com/project-slug: scott-blankenship/backstage-template-testing
-spec:
-  type: other
-  lifecycle: unknown
-  owner: nue_nsight_development_azure_admins
----
-apiVersion: backstage.io/v1alpha1
 kind: Location
 metadata:
   name: nucor-backstage-templates-location
