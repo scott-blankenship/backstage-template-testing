@@ -8,3 +8,13 @@ spec:
   type: other
   lifecycle: unknown
   owner: nue_nsight_development_azure_admins
+---
+apiVersion: backstage.io/v1alpha1
+kind: Location
+metadata:
+  name: nucor-backstage-templates-location
+  description: All Backstage scaffolder templates for Nucor
+spec:
+  targets:
+    # Load the new Terraform Cloud workspace template
+    - ./terraform/workspace-create.yaml
