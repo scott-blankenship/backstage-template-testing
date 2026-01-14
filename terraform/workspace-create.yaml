@@ -1,0 +1,215 @@
+
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: tfc-workspace-create
+  title: Create Terraform Cloud Workspace
+  description: Creates a Terraform Cloud (TFC) workspace and optionally seeds variables and connects a VCS repo.
+  tags:
+    - terraform
+    - tfe
+    - cloud
+    - automation
+  annotations:
+    # Optional: show a nice icon in the Create page
+    backstage.io/view-url: https://app.terraform.io
+spec:
+  owner: platform/infra
+  type: service
+
+  parameters:
+    - title: Workspace Basics
+      required: [organization, workspaceName]
+      properties:
+        organization:
+          type: string
+          title: TFC Organization
+          description: Terraform Cloud organization slug (e.g., nucor)
+          ui:autofocus: true
+        workspaceName:
+          type: string
+          title: Workspace name
+          description: Must be unique within the TFC organization
+          pattern: '^[a-z0-9-]{3,64}$'
+          ui:help: "Lowercase, numbers, and hyphens; 3–64 chars (adjust to your naming policy)."
+        projectId:
+          type: string
+          title: Project ID (optional)
+          description: TFC Project ID to attach this workspace to
+        executionMode:
+          type: string
+          title: Execution mode
+          default: remote
+          enum:
+            - remote
+            - agent
+            - local
+        tags:
+          type: array
+          title: Tags (optional)
+          items:
+            type: string
+          default:
+            - created-by:backstage
+            - env:dev
+
+    - title: VCS (optional)
+      properties:
+        connectVcs:
+          type: boolean
+          title: Connect VCS Repo
+          default: false
+        vcsIdentifier:
+          type: string
+          title: VCS repo (org/repo)
+          description: Ex. github-org/app-infra
+        branch:
+          type: string
+          title: Branch
+          default: main
+        oauthTokenId:
+          type: string
+          title: TFC VCS OAuth Token ID
+          description: Terraform Cloud VCS OAuth token id (not the VCS PAT)
+
+      allOf:
+        - if:
+            properties:
+              connectVcs:
+                const: true
+          then:
+            required: [vcsIdentifier, oauthTokenId]
+
+    - title: Variables (optional)
+      properties:
+        tfvars:
+          type: array
+          title: Non-sensitive TF variables
+          description: Will be created as Terraform variables (category=terraform)
+          items:
+            type: object
+            required: [key, value]
+            properties:
+              key:
+                type: string
+              value:
+                type: string
+              hcl:
+                type: boolean
+                default: false
+              category:
+                type: string
+                default: terraform
+                enum: [terraform, env]
+        sensitiveTfvars:
+          type: array
+          title: Sensitive variables
+          description: Stored as sensitive in TFC
+          items:
+            type: object
+            required: [key, value]
+            properties:
+              key:
+                type: string
+              value:
+                type: string
+              hcl:
+                type: boolean
+                default: false
+              category:
+                type: string
+                default: terraform
+                enum: [terraform, env]
+
+  steps:
+    - id: createWorkspace
+      name: Create TFC workspace
+      action: http:request
+      input:
+        url: "https://app.terraform.io/api/v2/organizations/{{ parameters.organization }}/workspaces"
+        method: POST
+        headers:
+          Authorization: "Bearer ${{ secrets.TFC_TOKEN }}"
+          Content-Type: "application/vnd.api+json"
+        body:
+          data:
+            type: workspaces
+            attributes:
+              name: "{{ parameters.workspaceName }}"
+              execution-mode: "{{ parameters.executionMode }}"
+              tags: {{ parameters.tags | dump }}
+              {% if parameters.connectVcs %}
+              vcs-repo:
+                identifier: "{{ parameters.vcsIdentifier }}"
+                branch: "{{ parameters.branch | default('main') }}"
+                oauth-token-id: "{{ parameters.oauthTokenId }}"
+                ingress-submodules: false
+              {% endif %}
+            {% if parameters.projectId %}
+            relationships:
+              project:
+                data:
+                  type: projects
+                  id: "{{ parameters.projectId }}"
+            {% endif %}
+      output:
+        # Depending on Backstage version, response is in output.body (v1beta3).
+        # We capture the WS id for later steps.
+        json:
+          workspaceId: "$.data.id"
+
+    # Create non-sensitive variables (loop)
+    - id: createNonSensitiveVars
+      name: Create non-sensitive variables
+      if: "{{ parameters.tfvars && parameters.tfvars.length > 0 }}"
+      action: http:request
+      each:
+        items: "{{ parameters.tfvars }}"
+        as: item
+      input:
+        url: "https://app.terraform.io/api/v2/workspaces/{{ steps.createWorkspace.output.json.workspaceId }}/vars"
+        method: POST
+        headers:
+          Authorization: "Bearer ${{ secrets.TFC_TOKEN }}"
+          Content-Type: "application/vnd.api+json"
+        body:
+          data:
+            type: vars
+            attributes:
+              key: "{{ item.key }}"
+              value: "{{ item.value }}"
+              category: "{{ item.category | default('terraform') }}"
+              hcl: "{{ item.hcl | default(false) }}"
+              sensitive: false
+
+    # Create sensitive variables (loop)
+    - id: createSensitiveVars
+      name: Create sensitive variables
+      if: "{{ parameters.sensitiveTfvars && parameters.sensitiveTfvars.length > 0 }}"
+      action: http:request
+      each:
+        items: "{{ parameters.sensitiveTfvars }}"
+        as: item
+      input:
+        url: "https://app.terraform.io/api/v2/workspaces/{{ steps.createWorkspace.output.json.workspaceId }}/vars"
+        method: POST
+        headers:
+          Authorization: "Bearer ${{ secrets.TFC_TOKEN }}"
+          Content-Type: "application/vnd.api+json"
+        body:
+          data:
+            type: vars
+            attributes:
+              key: "{{ item.key }}"
+              value: "{{ item.value }}"
+              category: "{{ item.category | default('terraform') }}"
+              hcl: "{{ item.hcl | default(false) }}"
+              sensitive: true
+
+  output:
+    links:
+      - title: Open Workspace
+        url: "https://app.terraform.io/app/{{ parameters.organization }}/workspaces/{{ parameters.workspaceName }}"
+    text:
+      - title: Workspace created
+        content: "https://app.terraform.io/app/{{ parameters.organization }}/workspaces/{{ parameters.workspaceName }}"
