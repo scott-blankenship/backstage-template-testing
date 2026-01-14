@@ -3,7 +3,7 @@ kind: Component
 metadata:
   name: Nucor.Backstage.Templates
   annotations:
-    github.com/project-slug: NucorApplications/Nucor.Backstage.Templates
+    github.com/project-slug: scott-blankenship/backstage-template-testing
 spec:
   type: other
   lifecycle: unknown
